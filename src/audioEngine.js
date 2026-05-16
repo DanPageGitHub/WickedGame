@@ -10,6 +10,7 @@ const REPEAT_GRAIN_OVERLAP = 0.02;
 const REPEAT_QUANTIZE = "4n";
 const REPEAT_RELEASE_FADE = 0.03;
 const REPEAT_ENGAGE_FADE = 0.01;
+const BPM_EPSILON = 0.0001;
 const LONG_GRAIN_MIN = 0.04;
 const LONG_GRAIN_MAX = 0.11;
 const LONG_OVERLAP_MIN = 0.018;
@@ -35,6 +36,7 @@ export class AudioEngine {
     this.barScheduleId = null;
     this.repeatScheduleId = null;
     this.repeatQuantizeTimeoutId = null;
+    this.hasTempoChanged = false;
     this.repeatSourceOffsetSeconds = config.breakStartOffsetSeconds;
     this.breakTrackStartTime = null;
     this.breakTrackTimeline = {
@@ -46,8 +48,10 @@ export class AudioEngine {
     this.stemPlayers = {};
     this.otherVariantBank = [];
     this.breakPlayers = null;
+    this.breakTrackCleanPlayer = null;
     this.breakTrackPlayer = null;
     this.breakRepeatPlayer = null;
+    this.breakTrackCleanGain = null;
     this.breakTrackGain = null;
     this.breakRepeatGain = null;
   }
@@ -102,6 +106,7 @@ export class AudioEngine {
         playbackRate: this.#getBreakPlaybackRate()
       };
       this.breakTrackStartTime = startAt;
+      this.breakTrackCleanPlayer.start(startAt, this.config.breakStartOffsetSeconds);
       this.breakTrackPlayer.start(startAt, this.config.breakStartOffsetSeconds);
     }
 
@@ -119,6 +124,7 @@ export class AudioEngine {
     }
 
     this.currentBpm = bpm;
+    this.hasTempoChanged ||= Math.abs(bpm - this.config.baseBpm) > BPM_EPSILON;
 
     if (immediate) {
       Tone.Transport.bpm.value = bpm;
@@ -133,6 +139,7 @@ export class AudioEngine {
 
     this.#updateLongPlayerPlaybackRates();
     this.#updateBreakPlaybackRates();
+    this.#updateBreakTrackMode(Tone.now(), immediate || this.hasTempoChanged);
   }
 
   cycleOtherVariant() {
@@ -194,7 +201,8 @@ export class AudioEngine {
       feedback: 0.35,
       wet: 0
     });
-    this.breakTrackGain = new Tone.Gain(1);
+    this.breakTrackCleanGain = new Tone.Gain(1);
+    this.breakTrackGain = new Tone.Gain(0);
     this.breakRepeatGain = new Tone.Gain(1);
     this.breaksDryGain = new Tone.Gain(1);
     this.breaksFilterWetGain = new Tone.Gain(0);
@@ -207,6 +215,8 @@ export class AudioEngine {
     this.breaksDryGain.connect(this.breaksChannel);
     this.breaksFilter.connect(this.breaksFilterWetGain);
     this.breaksFilterWetGain.connect(this.breaksChannel);
+    this.breakTrackCleanGain.connect(this.breaksDryGain);
+    this.breakTrackCleanGain.connect(this.breaksFilter);
     this.breakTrackGain.connect(this.breaksDryGain);
     this.breakTrackGain.connect(this.breaksFilter);
     this.breakRepeatGain.connect(this.breaksDryGain);
@@ -250,6 +260,7 @@ export class AudioEngine {
 
   #createBreakPlayers() {
     if (this.config.media.breakTrackPath) {
+      this.breakTrackCleanPlayer = this.#createCleanLoopPlayer(this.config.media.breakTrackPath).connect(this.breakTrackCleanGain);
       this.breakTrackPlayer = this.#createLongPlayer(this.config.media.breakTrackPath).connect(this.breakTrackGain);
       this.breakRepeatPlayer = this.#createRepeatPlayer(this.config.media.breakTrackPath).connect(this.breakRepeatGain);
       this.breakRepeatGain.gain.value = 0;
@@ -349,7 +360,7 @@ export class AudioEngine {
 
     if (!interval) {
       if (this.breakTrackPlayer && this.breakRepeatPlayer) {
-        this.#scheduleGain(this.breakTrackGain.gain, 1, activationTime, REPEAT_RELEASE_FADE);
+        this.#scheduleBreakTrackIdleState(activationTime, REPEAT_RELEASE_FADE);
         this.#scheduleGain(this.breakRepeatGain.gain, 0, activationTime, REPEAT_RELEASE_FADE);
         this.breakRepeatPlayer.stop(activationTime + REPEAT_RELEASE_FADE + 0.005);
       }
@@ -372,6 +383,7 @@ export class AudioEngine {
       this.breakRepeatPlayer.loopStart = safeOffset;
       this.breakRepeatPlayer.loopEnd = Math.min(safeOffset + sourceDuration, bufferDuration);
       this.breakRepeatPlayer.restart(activationTime, safeOffset);
+      this.#scheduleGain(this.breakTrackCleanGain.gain, 0, activationTime, REPEAT_ENGAGE_FADE);
       this.#scheduleGain(this.breakTrackGain.gain, 0, activationTime, REPEAT_ENGAGE_FADE);
       this.#scheduleGain(this.breakRepeatGain.gain, 1, activationTime, REPEAT_ENGAGE_FADE);
       this.activeRepeatInterval = interval;
@@ -496,9 +508,11 @@ export class AudioEngine {
     this.repeatScheduleId = null;
     this.repeatQuantizeTimeoutId = null;
     this.activeRepeatInterval = null;
+    this.hasTempoChanged = false;
     this.repeatSourceOffsetSeconds = this.config.breakStartOffsetSeconds;
     this.breakTrackStartTime = null;
-    this.breakTrackGain.gain.value = 1;
+    this.breakTrackCleanGain.gain.value = 1;
+    this.breakTrackGain.gain.value = 0;
     this.breakRepeatGain.gain.value = 0;
 
     if (this.breakRepeatPlayer) {
@@ -613,6 +627,13 @@ export class AudioEngine {
     });
   }
 
+  #createCleanLoopPlayer(url) {
+    return new Tone.Player({
+      url,
+      loop: true
+    });
+  }
+
   #emitBeatRepeatHit(breakId, interval) {
     this.events.emit("beat-repeat-hit", {
       breakId,
@@ -648,6 +669,31 @@ export class AudioEngine {
     }
 
     return Math.min(Math.max(offset, 0), bufferDuration - sourceDuration);
+  }
+
+  #scheduleBreakTrackIdleState(time, fadeDuration) {
+    const useClean = this.#shouldUseCleanBreakTrack();
+    this.#scheduleGain(this.breakTrackCleanGain.gain, useClean ? 1 : 0, time, fadeDuration);
+    this.#scheduleGain(this.breakTrackGain.gain, useClean ? 0 : 1, time, fadeDuration);
+  }
+
+  #updateBreakTrackMode(time = Tone.now(), immediate = false) {
+    if (!this.breakTrackPlayer || !this.breakTrackCleanGain || this.activeRepeatInterval) {
+      return;
+    }
+
+    if (immediate) {
+      const useClean = this.#shouldUseCleanBreakTrack();
+      this.breakTrackCleanGain.gain.value = useClean ? 1 : 0;
+      this.breakTrackGain.gain.value = useClean ? 0 : 1;
+      return;
+    }
+
+    this.#scheduleBreakTrackIdleState(time, 0.04);
+  }
+
+  #shouldUseCleanBreakTrack() {
+    return !this.hasTempoChanged && Math.abs(this.currentBpm - this.config.baseBpm) <= BPM_EPSILON;
   }
 
   #clamp(value, min, max) {
