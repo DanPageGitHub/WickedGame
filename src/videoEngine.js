@@ -39,9 +39,7 @@ export class VideoEngine {
     }
 
     setStatus("Loading video metadata...");
-    this.video.muted = true;
-    this.video.defaultMuted = true;
-    this.video.volume = 0;
+    this.#enforceMute();
 
     await new Promise((resolve, reject) => {
       const handleLoaded = () => {
@@ -59,6 +57,9 @@ export class VideoEngine {
 
       this.video.addEventListener("loadedmetadata", handleLoaded, { once: true });
       this.video.addEventListener("error", handleError, { once: true });
+      this.video.addEventListener("volumechange", () => {
+        this.#enforceMute();
+      });
       this.video.src = this.config.media.videoPath;
       this.video.load();
     });
@@ -75,9 +76,7 @@ export class VideoEngine {
       throw new Error("VideoEngine.start() called before load().");
     }
 
-    this.video.muted = true;
-    this.video.defaultMuted = true;
-    this.video.volume = 0;
+    this.#enforceMute();
     this.video.currentTime = 0;
     await this.video.play();
   }
@@ -93,7 +92,15 @@ export class VideoEngine {
   }
 
   async resume() {
+    this.#enforceMute();
     await this.video.play();
+  }
+
+  #enforceMute() {
+    this.video.muted = true;
+    this.video.defaultMuted = true;
+    this.video.volume = 0;
+    this.video.setAttribute("muted", "");
   }
 
   #bindEventBus() {
