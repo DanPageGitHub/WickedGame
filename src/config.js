@@ -1,3 +1,5 @@
+const withBase = (path) => `${import.meta.env.BASE_URL}${path.replace(/^\//, "")}`;
+
 function createBreakSamples(count) {
   return Array.from({ length: count }, (_, index) => {
     const number = String(index + 1).padStart(3, "0");
@@ -5,7 +7,7 @@ function createBreakSamples(count) {
     return {
       id: `break-${number}`,
       label: `Break ${number}`,
-      path: `/media/breaks/break-${number}.wav`
+      path: withBase(`/media/breaks/break-${number}.wav`)
     };
   });
 }
@@ -23,21 +25,21 @@ export const APP_CONFIG = {
     step: 1
   },
   media: {
-    videoPath: "/media/video/ChoppedDownMosh.mp4",
+    videoPath: withBase("/media/video/ChoppedDownMosh.mp4"),
     stems: {
-      vocals: "/media/stems/vocals.wav",
-      bass: "/media/stems/bass.wav",
-      other: "/media/stems/other.wav"
+      vocals: withBase("/media/stems/vocals.wav"),
+      bass: withBase("/media/stems/bass.wav"),
+      other: withBase("/media/stems/other.wav")
     },
     // When you switch to one long break track, put its path here and the engine
     // will run it continuously instead of choosing a random one-bar break per bar.
-    breakTrackPath: "/media/breaks/break-track.wav",
+    breakTrackPath: withBase("/media/breaks/break-track.wav"),
     // Add synced alternate versions here. They must be exported from the same timeline start.
     otherVariants: [
       {
         id: "og",
         label: "OG",
-        path: "/media/stems/other.wav"
+        path: withBase("/media/stems/other.wav")
       }
     ],
     breakSamples: createBreakSamples(101)
@@ -73,5 +75,14 @@ export const APP_CONFIG = {
         label: "Hold R: video glitch/freeze"
       }
     }
+  },
+  factsOverlay: {
+    enabledByDefault: false,
+    seed: 42,
+    slotSeconds: 12,
+    fadeInSeconds: 0.8,
+    holdSeconds: 9.6,
+    fadeOutSeconds: 1.6,
+    maxWidthPx: 720
   }
 };

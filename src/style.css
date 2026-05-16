@@ -143,6 +143,31 @@ input {
   transition: opacity 0.18s ease, filter 0.18s ease;
 }
 
+.facts-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 2.75rem;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 2;
+}
+
+.facts-overlay__text {
+  max-width: 720px;
+  color: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: clamp(1.6rem, 3vw, 44px);
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  text-wrap: balance;
+  text-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.6),
+    0 0 32px rgba(0, 0, 0, 0.42);
+}
+
 .hud {
   position: absolute;
   left: 1rem;
@@ -427,6 +452,10 @@ input {
   .video-frame {
     width: min(100vw, calc(100vh * var(--video-aspect)));
     height: 100vh;
+  }
+
+  .facts-overlay {
+    padding: 1.2rem;
   }
 
   .hud {

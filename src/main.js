@@ -2,6 +2,7 @@ import { APP_CONFIG } from "./config.js";
 import { createControls } from "./controls.js";
 import { AudioEngine } from "./audioEngine.js";
 import { createEventBus } from "./events.js";
+import { FactsOverlay } from "./factsOverlay.js";
 import "./style.css";
 import { VideoEngine } from "./videoEngine.js";
 
@@ -9,6 +10,8 @@ const elements = {
   app: document.querySelector("#app"),
   video: document.querySelector("#main-video"),
   freezeFrame: document.querySelector("#freeze-frame"),
+  factsOverlay: document.querySelector("#facts-overlay"),
+  factsOverlayText: document.querySelector("#facts-overlay-text"),
   startButton: document.querySelector("#start-button"),
   status: document.querySelector("#status"),
   tempoSlider: document.querySelector("#tempo-slider"),
@@ -25,6 +28,11 @@ const videoEngine = new VideoEngine(APP_CONFIG, events, {
   app: elements.app,
   video: elements.video,
   freezeFrame: elements.freezeFrame
+});
+const factsOverlay = new FactsOverlay(APP_CONFIG, events, {
+  video: elements.video,
+  overlay: elements.factsOverlay,
+  text: elements.factsOverlayText
 });
 let isRunning = false;
 let isPaused = false;
@@ -68,6 +76,7 @@ const controls = createControls({
   },
   onStart: startPlayback
 });
+factsOverlay.load();
 
 controls.setOtherVariantState(audioEngine.getOtherVariantState());
 

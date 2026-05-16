@@ -1,4 +1,7 @@
 node_modules
 dist
+vite-*.log
+vite-*.err.log
+playwright-*.json
 vite-user.log
 vite-user.err.log

@@ -14,6 +14,7 @@ export function createControls({ config, events, elements, onStart, onTempoChang
 
   const keyHelpItems = Object.entries(heldKeyMap).map(([, value]) => value.label);
   keyHelpItems.push("Btn: next gtr");
+  keyHelpItems.push("F: facts");
   keyHelpItems.push("Space: play / pause");
   keyHelpItems.push("Tab: controls");
   elements.keyHelp.innerHTML = keyHelpItems.map((item) => `<span>${item}</span>`).join("");
@@ -70,6 +71,17 @@ export function createControls({ config, events, elements, onStart, onTempoChang
       }
 
       events.emit("transport-toggle");
+      return;
+    }
+
+    if (key === "f") {
+      event.preventDefault();
+
+      if (event.repeat) {
+        return;
+      }
+
+      events.emit("facts-toggle");
       return;
     }
 
