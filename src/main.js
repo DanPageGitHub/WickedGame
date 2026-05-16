@@ -12,6 +12,8 @@ const elements = {
   freezeFrame: document.querySelector("#freeze-frame"),
   factsOverlay: document.querySelector("#facts-overlay"),
   factsOverlayText: document.querySelector("#facts-overlay-text"),
+  startButton: document.querySelector("#start-button"),
+  startupOverlay: document.querySelector("#startup-overlay"),
   status: document.querySelector("#status"),
   tempoSlider: document.querySelector("#tempo-slider"),
   tempoValue: document.querySelector("#tempo-value"),
@@ -33,11 +35,40 @@ const factsOverlay = new FactsOverlay(APP_CONFIG, events, {
 });
 let isRunning = false;
 let isPaused = false;
-let autoplayUnlockBound = false;
+let isStarting = false;
+let mediaReadyPromise = null;
+let startRequested = false;
 
 const setStatus = (message, type = "info") => {
   elements.status.textContent = message;
   elements.status.dataset.type = type;
+};
+
+const hideStartupOverlay = () => {
+  elements.app.classList.add("startup-dismissed");
+
+  if (!elements.startupOverlay) {
+    return;
+  }
+
+  elements.startupOverlay.dataset.state = "hidden";
+  elements.startupOverlay.hidden = true;
+  elements.startupOverlay.setAttribute("aria-hidden", "true");
+  elements.startupOverlay.remove();
+  elements.startupOverlay = null;
+};
+
+const setStartupOverlayState = (state, title, subtitle) => {
+  if (!elements.startupOverlay) {
+    return;
+  }
+
+  elements.app.classList.remove("startup-dismissed");
+  elements.startupOverlay.dataset.state = state;
+  elements.startupOverlay.hidden = false;
+  elements.startupOverlay.setAttribute("aria-hidden", "false");
+  document.querySelector("#startup-overlay-text").textContent = title;
+  document.querySelector("#startup-overlay-subtext").textContent = subtitle;
 };
 
 const startPlayback = async () => {
@@ -46,22 +77,35 @@ const startPlayback = async () => {
     return true;
   }
 
+  if (isStarting) {
+    return false;
+  }
+
+  isStarting = true;
+  startRequested = true;
+
   try {
+    setStartupOverlayState("loading", "Warming up...", "One mo.");
     setStatus("Loading media...");
-    await Promise.all([audioEngine.load(setStatus), videoEngine.load(setStatus)]);
+    await mediaReadyPromise;
 
     setStatus("Starting playback...");
     await Promise.all([audioEngine.start(), videoEngine.start()]);
 
     isRunning = true;
     isPaused = false;
-    autoplayUnlockBound = false;
+    elements.startButton.textContent = "Pause";
+    hideStartupOverlay();
     setStatus("Running. Hold keys to perform.");
     return true;
   } catch (error) {
     console.error(error);
-    setStatus("Tap or press Space for audio.", "error");
+    setStatus("Click or press Space to start.", "error");
+    startRequested = false;
+    setStartupOverlayState("ready", "Click to wake it up", "Press Space if you prefer.");
     return false;
+  } finally {
+    isStarting = false;
   }
 };
 
@@ -69,6 +113,7 @@ const controls = createControls({
   config: APP_CONFIG,
   events,
   elements,
+  onStart: startPlayback,
   onTempoChange: (bpm) => {
     audioEngine.setTempo(bpm);
   }
@@ -89,45 +134,31 @@ events.on("transport-toggle", async () => {
   if (isPaused) {
     await Promise.all([audioEngine.resume(), videoEngine.resume()]);
     isPaused = false;
+    elements.startButton.textContent = "Pause";
     setStatus("Running. Hold keys to perform.");
     return;
   }
 
   await Promise.all([audioEngine.suspend(), videoEngine.pause()]);
   isPaused = true;
+  elements.startButton.textContent = "Play";
   setStatus("Paused.");
 });
 
-const bindAutoplayUnlock = () => {
-  if (autoplayUnlockBound || isRunning) {
+const boot = async () => {
+  setStartupOverlayState("loading", "Warming up...", "One mo.");
+  setStatus("Loading media...");
+  mediaReadyPromise = Promise.all([audioEngine.load(setStatus), videoEngine.load(setStatus)]);
+  await mediaReadyPromise;
+
+  if (isRunning || isStarting || startRequested) {
     return;
   }
 
-  autoplayUnlockBound = true;
-  const unlock = async () => {
-    window.removeEventListener("pointerdown", unlock);
-    window.removeEventListener("keydown", unlock);
-    autoplayUnlockBound = false;
-    await startPlayback();
-  };
-
-  window.addEventListener("pointerdown", unlock, { once: true });
-  window.addEventListener("keydown", unlock, { once: true });
+  elements.startButton.textContent = "Play";
+  setStartupOverlayState("ready", "Click to wake it up", "Press Space if you prefer.");
+  setStatus("Click or press Space to start.");
 };
 
-const boot = async () => {
-  setStatus("Loading media...");
-  await Promise.all([audioEngine.load(setStatus), videoEngine.load(setStatus)]);
-
-  try {
-    await videoEngine.start();
-    setStatus("Video running. Tap or press Space for audio.");
-  } catch (error) {
-    console.warn(error);
-    setStatus("Tap or press Space for playback.");
-  }
-
-  bindAutoplayUnlock();
-};
-
+elements.startupOverlay.addEventListener("click", startPlayback);
 boot();

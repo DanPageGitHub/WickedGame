@@ -22,6 +22,11 @@
           <div id="facts-overlay" class="facts-overlay" aria-hidden="true">
             <div id="facts-overlay-text" class="facts-overlay__text"></div>
           </div>
+          <button id="startup-overlay" class="startup-overlay" type="button" hidden aria-hidden="true" data-state="loading">
+            <span class="startup-overlay__spinner" aria-hidden="true"></span>
+            <span id="startup-overlay-text" class="startup-overlay__text">Loading the spell...</span>
+            <span id="startup-overlay-subtext" class="startup-overlay__subtext">Press Space if you prefer.</span>
+          </button>
         </div>
       </div>
 
@@ -29,6 +34,7 @@
 
       <section class="hud" aria-label="Artwork controls">
         <div class="hud__row">
+          <button id="start-button" class="hud__button" type="button">Play</button>
           <p id="status" class="hud__status">Ready.</p>
         </div>
 

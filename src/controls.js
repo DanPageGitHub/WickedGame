@@ -6,7 +6,7 @@ function normalizeKey(key) {
   return key.toLowerCase();
 }
 
-export function createControls({ config, events, elements, onTempoChange }) {
+export function createControls({ config, events, elements, onStart, onTempoChange }) {
   const heldKeyMap = config.controls.heldKeys;
   const activeKeys = new Set();
   const isRepeatKey = (key) => heldKeyMap[key]?.effectId.startsWith("repeat-");
@@ -125,6 +125,14 @@ export function createControls({ config, events, elements, onTempoChange }) {
     onTempoChange(bpm);
   };
 
+  const handleStart = async () => {
+    if (!elements.startButton) {
+      return;
+    }
+
+    await onStart();
+  };
+
   window.addEventListener("keydown", handleKeyDown);
   window.addEventListener("keyup", handleKeyUp);
   window.addEventListener("blur", clearHeldKeys);
@@ -134,6 +142,7 @@ export function createControls({ config, events, elements, onTempoChange }) {
     }
   });
   elements.tempoSlider.addEventListener("input", handleTempoInput);
+  elements.startButton?.addEventListener("click", handleStart);
 
   return {
     clearHeldKeys
