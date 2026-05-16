@@ -23,7 +23,7 @@ export const APP_CONFIG = {
     step: 1
   },
   media: {
-    videoPath: "/media/video/MoshedVersion.mp4",
+    videoPath: "/media/video/ChoppedDownMosh.mp4",
     stems: {
       vocals: "/media/stems/vocals.wav",
       bass: "/media/stems/bass.wav",

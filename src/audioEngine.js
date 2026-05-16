@@ -9,7 +9,7 @@ const REPEAT_GRAIN_SIZE = 0.035;
 const REPEAT_GRAIN_OVERLAP = 0.02;
 const REPEAT_QUANTIZE = "4n";
 const REPEAT_RELEASE_FADE = 0.03;
-const REPEAT_VOICE_COUNT = 6;
+const REPEAT_ENGAGE_FADE = 0.01;
 const LONG_GRAIN_MIN = 0.04;
 const LONG_GRAIN_MAX = 0.11;
 const LONG_OVERLAP_MIN = 0.018;
@@ -35,7 +35,6 @@ export class AudioEngine {
     this.barScheduleId = null;
     this.repeatScheduleId = null;
     this.repeatQuantizeTimeoutId = null;
-    this.repeatVoiceIndex = 0;
     this.repeatSourceOffsetSeconds = config.breakStartOffsetSeconds;
     this.breakTrackStartTime = null;
     this.breakTrackTimeline = {
@@ -48,7 +47,7 @@ export class AudioEngine {
     this.otherVariantBank = [];
     this.breakPlayers = null;
     this.breakTrackPlayer = null;
-    this.breakRepeatVoices = [];
+    this.breakRepeatPlayer = null;
     this.breakTrackGain = null;
     this.breakRepeatGain = null;
   }
@@ -175,11 +174,13 @@ export class AudioEngine {
   #createGraph() {
     this.mixBus = new Tone.Gain(1);
     this.masterCrusher = new Tone.BitCrusher({ bits: 8, wet: 0 });
-    this.masterDrive = new Tone.Distortion({ distortion: 0.2, wet: 0 });
-    this.masterLimiter = new Tone.Limiter(-1).toDestination();
     this.levelMeter = new Tone.Meter({ normalRange: true, smoothing: 0.82 });
+    this.masterDryGain = new Tone.Gain(1).toDestination();
+    this.masterDestroyWetGain = new Tone.Gain(0).toDestination();
 
-    this.mixBus.chain(this.masterCrusher, this.masterDrive, this.masterLimiter);
+    this.mixBus.connect(this.masterDryGain);
+    this.mixBus.connect(this.masterCrusher);
+    this.masterCrusher.connect(this.masterDestroyWetGain);
     this.mixBus.connect(this.levelMeter);
 
     this.breaksFilter = new Tone.Filter({
@@ -195,14 +196,20 @@ export class AudioEngine {
     });
     this.breakTrackGain = new Tone.Gain(1);
     this.breakRepeatGain = new Tone.Gain(1);
+    this.breaksDryGain = new Tone.Gain(1);
+    this.breaksFilterWetGain = new Tone.Gain(0);
 
     this.vocalsChannel = new Tone.Channel().connect(this.mixBus);
     this.bassChannel = new Tone.Channel().connect(this.mixBus);
     this.otherChannel = new Tone.Channel().connect(this.mixBus);
     this.breaksChannel = new Tone.Channel().connect(this.mixBus);
 
-    this.breaksFilter.connect(this.breaksChannel);
+    this.breaksDryGain.connect(this.breaksChannel);
+    this.breaksFilter.connect(this.breaksFilterWetGain);
+    this.breaksFilterWetGain.connect(this.breaksChannel);
+    this.breakTrackGain.connect(this.breaksDryGain);
     this.breakTrackGain.connect(this.breaksFilter);
+    this.breakRepeatGain.connect(this.breaksDryGain);
     this.breakRepeatGain.connect(this.breaksFilter);
     this.vocalDelay.connect(this.vocalsChannel);
   }
@@ -244,9 +251,8 @@ export class AudioEngine {
   #createBreakPlayers() {
     if (this.config.media.breakTrackPath) {
       this.breakTrackPlayer = this.#createLongPlayer(this.config.media.breakTrackPath).connect(this.breakTrackGain);
-      this.breakRepeatVoices = Array.from({ length: REPEAT_VOICE_COUNT }, () =>
-        this.#createRepeatPlayer(this.config.media.breakTrackPath).connect(this.breakRepeatGain)
-      );
+      this.breakRepeatPlayer = this.#createRepeatPlayer(this.config.media.breakTrackPath).connect(this.breakRepeatGain);
+      this.breakRepeatGain.gain.value = 0;
 
       this.#updateBreakPlaybackRates();
       return;
@@ -311,14 +317,19 @@ export class AudioEngine {
   #setFilterState(active) {
     const targetFrequency = active ? FILTER_CLOSED_FREQUENCY : FILTER_OPEN_FREQUENCY;
     const targetQ = active ? 10 : 1;
+    const dryLevel = active ? 0 : 1;
+    const wetLevel = active ? 1 : 0;
 
     this.breaksFilter.frequency.rampTo(targetFrequency, 0.05);
     this.breaksFilter.Q.rampTo(targetQ, 0.05);
+    this.breaksDryGain.gain.rampTo(dryLevel, 0.03);
+    this.breaksFilterWetGain.gain.rampTo(wetLevel, 0.03);
   }
 
   #setDestroyState(active) {
     this.masterCrusher.bits = active ? 4 : 8;
-    this.masterCrusher.wet.rampTo(active ? 0.9 : 0, 0.05);
+    this.masterDryGain.gain.rampTo(active ? 0.35 : 1, 0.05);
+    this.masterDestroyWetGain.gain.rampTo(active ? 0.8 : 0, 0.05);
   }
 
   #setVocalThrowState(active) {
@@ -337,33 +348,45 @@ export class AudioEngine {
     }
 
     if (!interval) {
-      if (this.breakTrackGain) {
+      if (this.breakTrackPlayer && this.breakRepeatPlayer) {
         this.#scheduleGain(this.breakTrackGain.gain, 1, activationTime, REPEAT_RELEASE_FADE);
+        this.#scheduleGain(this.breakRepeatGain.gain, 0, activationTime, REPEAT_RELEASE_FADE);
+        this.breakRepeatPlayer.stop(activationTime + REPEAT_RELEASE_FADE + 0.005);
       }
       return;
     }
 
-    if (this.breakTrackPlayer) {
-      this.repeatSourceOffsetSeconds = this.#getBreakTrackSourceOffsetAt(activationTime);
-      this.#scheduleGain(this.breakTrackGain.gain, 0, activationTime, 0.012);
+    if (this.breakTrackPlayer && this.breakRepeatPlayer) {
+      const intervalSeconds = Tone.Time(interval).toSeconds();
+      const playbackRate = this.#getBreakPlaybackRate();
+      const sourceDuration = Math.max(intervalSeconds * playbackRate, 0.04);
+      const bufferDuration = this.breakRepeatPlayer.buffer.duration;
+      const safeOffset = this.#getSafeRepeatOffset(
+        this.#getBreakTrackSourceOffsetAt(activationTime),
+        sourceDuration,
+        bufferDuration
+      );
+
+      this.repeatSourceOffsetSeconds = safeOffset;
+      this.breakRepeatPlayer.loop = true;
+      this.breakRepeatPlayer.loopStart = safeOffset;
+      this.breakRepeatPlayer.loopEnd = Math.min(safeOffset + sourceDuration, bufferDuration);
+      this.breakRepeatPlayer.restart(activationTime, safeOffset);
+      this.#scheduleGain(this.breakTrackGain.gain, 0, activationTime, REPEAT_ENGAGE_FADE);
+      this.#scheduleGain(this.breakRepeatGain.gain, 1, activationTime, REPEAT_ENGAGE_FADE);
+      this.activeRepeatInterval = interval;
+      this.#emitBeatRepeatHit("break-track", interval);
+      this.repeatScheduleId = Tone.Transport.scheduleRepeat(
+        () => {
+          this.#emitBeatRepeatHit("break-track", interval);
+        },
+        interval,
+        activationTime + intervalSeconds
+      );
+      return;
     }
 
     const triggerRepeatHit = (time) => {
-      if (this.breakTrackPlayer && this.breakRepeatVoices.length > 0) {
-        const intervalSeconds = Tone.Time(interval).toSeconds();
-        const playbackRate = this.#getBreakPlaybackRate();
-        const sourceDuration = Math.max(intervalSeconds * playbackRate * 0.95, 0.04);
-        const voice = this.breakRepeatVoices[this.repeatVoiceIndex];
-
-        this.repeatVoiceIndex = (this.repeatVoiceIndex + 1) % this.breakRepeatVoices.length;
-        voice.restart(time, this.repeatSourceOffsetSeconds, sourceDuration);
-        this.events.emit("beat-repeat-hit", {
-          breakId: "break-track",
-          interval
-        });
-        return;
-      }
-
       if (!this.currentBreakId) {
         return;
       }
@@ -473,9 +496,15 @@ export class AudioEngine {
     this.repeatScheduleId = null;
     this.repeatQuantizeTimeoutId = null;
     this.activeRepeatInterval = null;
-    this.repeatVoiceIndex = 0;
     this.repeatSourceOffsetSeconds = this.config.breakStartOffsetSeconds;
     this.breakTrackStartTime = null;
+    this.breakTrackGain.gain.value = 1;
+    this.breakRepeatGain.gain.value = 0;
+
+    if (this.breakRepeatPlayer) {
+      this.breakRepeatPlayer.stop();
+    }
+
     this.breakTrackTimeline = {
       sourceOffsetSeconds: this.config.breakStartOffsetSeconds,
       lastAudioTime: 0,
@@ -496,10 +525,10 @@ export class AudioEngine {
       this.#applyStretchSettings(this.breakTrackPlayer, longGrainSize, longOverlap);
     }
 
-    this.breakRepeatVoices.forEach((voice) => {
-      voice.playbackRate = playbackRate;
-      this.#applyStretchSettings(voice, repeatGrainSize, repeatOverlap);
-    });
+    if (this.breakRepeatPlayer) {
+      this.breakRepeatPlayer.playbackRate = playbackRate;
+      this.#applyStretchSettings(this.breakRepeatPlayer, repeatGrainSize, repeatOverlap);
+    }
 
     if (!this.breakPlayers) {
       return;
@@ -578,9 +607,16 @@ export class AudioEngine {
   #createRepeatPlayer(url) {
     return new Tone.GrainPlayer({
       url,
-      loop: false,
+      loop: true,
       grainSize: REPEAT_GRAIN_SIZE,
       overlap: REPEAT_GRAIN_OVERLAP
+    });
+  }
+
+  #emitBeatRepeatHit(breakId, interval) {
+    this.events.emit("beat-repeat-hit", {
+      breakId,
+      interval
     });
   }
 
@@ -604,6 +640,14 @@ export class AudioEngine {
   #applyStretchSettings(player, grainSize, overlap) {
     player.grainSize = grainSize;
     player.overlap = overlap;
+  }
+
+  #getSafeRepeatOffset(offset, sourceDuration, bufferDuration) {
+    if (!bufferDuration || bufferDuration <= sourceDuration) {
+      return 0;
+    }
+
+    return Math.min(Math.max(offset, 0), bufferDuration - sourceDuration);
   }
 
   #clamp(value, min, max) {

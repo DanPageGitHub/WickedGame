@@ -13,9 +13,9 @@ export function createControls({ config, events, elements, onStart, onTempoChang
   let controlsVisible = false;
 
   const keyHelpItems = Object.entries(heldKeyMap).map(([, value]) => value.label);
-  keyHelpItems.push("Button: cycle synced Other variants");
-  keyHelpItems.push("Space: pause / resume");
-  keyHelpItems.push("Tab: show / hide controls");
+  keyHelpItems.push("Btn: next gtr");
+  keyHelpItems.push("Space: play / pause");
+  keyHelpItems.push("Tab: controls");
   elements.keyHelp.innerHTML = keyHelpItems.map((item) => `<span>${item}</span>`).join("");
 
   elements.tempoSlider.min = String(config.tempo.min);
@@ -151,8 +151,8 @@ export function createControls({ config, events, elements, onStart, onTempoChang
       elements.otherButton.disabled = count < 2;
       elements.otherButton.title =
         count < 2
-          ? "Add more synced other variants in src/config.js to enable switching."
-          : "Cycle to the next synced Other variant.";
+          ? "Add more synced guitar variants in src/config.js to enable switching."
+          : "Cycle to the next synced guitar variant.";
     }
   };
 }

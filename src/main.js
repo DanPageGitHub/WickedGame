@@ -28,7 +28,6 @@ const videoEngine = new VideoEngine(APP_CONFIG, events, {
 });
 let isRunning = false;
 let isPaused = false;
-let amplitudeFrameId = null;
 
 const setStatus = (message, type = "info") => {
   elements.status.textContent = message;
@@ -50,7 +49,6 @@ const startPlayback = async () => {
 
     isRunning = true;
     isPaused = false;
-    startAmplitudeLoop();
     setStatus("Running. Hold keys to perform.");
     elements.startButton.textContent = "Running";
     return true;
@@ -58,26 +56,6 @@ const startPlayback = async () => {
     console.error(error);
     setStatus(error.message, "error");
     return false;
-  }
-};
-
-const startAmplitudeLoop = () => {
-  const tick = () => {
-    if (isRunning && !isPaused) {
-      events.emit("amplitude-change", {
-        level: audioEngine.getVisualLevel()
-      });
-    } else {
-      events.emit("amplitude-change", {
-        level: 0
-      });
-    }
-
-    amplitudeFrameId = window.requestAnimationFrame(tick);
-  };
-
-  if (amplitudeFrameId === null) {
-    amplitudeFrameId = window.requestAnimationFrame(tick);
   }
 };
 

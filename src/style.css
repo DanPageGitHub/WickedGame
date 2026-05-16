@@ -10,14 +10,6 @@
   --danger: #ff7262;
   --video-scale: 1;
   --video-rotate: 0deg;
-  --amp-x: 0px;
-  --amp-y: 0px;
-  --amp-scale: 1;
-  --amp-rotate: 0deg;
-  --amp-brightness: 1;
-  --amp-contrast: 1;
-  --amp-blur: 0px;
-  --amp-flash: 0.08;
   --video-brightness: 1;
   --video-contrast: 1;
   --video-saturate: 1;
@@ -113,20 +105,17 @@ input {
   height: 100%;
   object-fit: cover;
   object-position: center center;
-  transform:
-    translate3d(var(--amp-x), var(--amp-y), 0)
-    scale(calc(var(--video-scale) * var(--amp-scale)))
-    rotate(calc(var(--video-rotate) + var(--amp-rotate)));
+  transform: scale(var(--video-scale)) rotate(var(--video-rotate));
   filter:
-    brightness(calc(var(--video-brightness) * var(--amp-brightness)))
-    contrast(calc(var(--video-contrast) * var(--amp-contrast)))
+    brightness(var(--video-brightness))
+    contrast(var(--video-contrast))
     saturate(var(--video-saturate))
-    blur(calc(var(--video-blur) + var(--amp-blur)))
+    blur(var(--video-blur))
     sepia(var(--video-sepia));
   transition:
-    transform 0.08s linear,
-    filter 0.08s linear,
-    opacity 0.08s linear;
+    transform 0.14s ease,
+    filter 0.12s ease,
+    opacity 0.12s ease;
 }
 
 .freeze-frame {
@@ -154,29 +143,17 @@ input {
   transition: opacity 0.18s ease, filter 0.18s ease;
 }
 
-.video-frame::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at center, rgba(255, 255, 255, calc(var(--amp-flash) * 0.32)), transparent 58%),
-    linear-gradient(180deg, rgba(255, 255, 255, calc(var(--amp-flash) * 0.14)), transparent 26%, transparent 74%, rgba(255, 255, 255, calc(var(--amp-flash) * 0.18)));
-  mix-blend-mode: screen;
-  opacity: 1;
-}
-
 .hud {
   position: absolute;
   left: 1rem;
   right: 1rem;
   bottom: 1rem;
   display: grid;
-  gap: 0.9rem;
-  padding: 1rem 1.1rem;
+  gap: 0.55rem;
+  padding: 0.65rem 0.8rem;
   background: var(--panel);
   border: 1px solid var(--panel-line);
-  border-radius: 20px;
+  border-radius: 14px;
   backdrop-filter: blur(24px);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
   transition: opacity 0.18s ease, transform 0.18s ease;
@@ -208,23 +185,25 @@ input {
 .hud__row {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.65rem;
   flex-wrap: wrap;
 }
 
 .hud__row--compact {
-  gap: 0.75rem 1rem;
+  gap: 0.45rem 0.8rem;
 }
 
 .hud__button {
-  padding: 0.7rem 1.2rem;
+  padding: 0.45rem 0.85rem;
   border: 1px solid rgba(241, 154, 99, 0.42);
   border-radius: 999px;
   background: rgba(241, 154, 99, 0.14);
   color: var(--text);
   cursor: pointer;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
+  font-size: 0.86rem;
+  line-height: 1;
 }
 
 .hud__button:disabled {
@@ -235,6 +214,7 @@ input {
 .hud__status {
   margin: 0;
   color: var(--muted);
+  font-size: 0.88rem;
 }
 
 .hud__status[data-type="error"] {
@@ -244,8 +224,9 @@ input {
 .hud__tempo {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  min-width: min(440px, 100%);
+  gap: 0.5rem;
+  min-width: min(320px, 100%);
+  font-size: 0.88rem;
 }
 
 .hud__tempo input {
@@ -255,18 +236,19 @@ input {
 .hud__value {
   font-family: "Courier New", monospace;
   color: var(--accent);
+  font-size: 0.86rem;
 }
 
 .hud__help {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem;
-  font-size: 0.92rem;
+  gap: 0.38rem;
+  font-size: 0.78rem;
   color: var(--muted);
 }
 
 .hud__help span {
-  padding: 0.35rem 0.55rem;
+  padding: 0.22rem 0.42rem;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
@@ -281,11 +263,9 @@ input {
 .app.effect-destroy {
   --video-contrast: 1.44;
   --video-saturate: 1.45;
-  --video-rotate: -0.5deg;
 }
 
 .app.effect-vocal-throw {
-  --video-scale: 1.03;
   --video-brightness: 1.08;
 }
 
@@ -302,7 +282,6 @@ input {
 .app.effect-video-freeze .main-video {
   opacity: 0.08;
   animation: liveVideoStrobe calc(var(--beat-ms) * 0.34) steps(4, end) infinite;
-  transform: scale(calc(var(--video-scale) * 1.035)) rotate(calc(var(--video-rotate) - 0.8deg));
 }
 
 .app.effect-video-freeze .video-flash {
@@ -324,27 +303,12 @@ input {
 .app.is-auto-freeze .main-video {
   opacity: 0.26;
   animation: autoLiveStrobe calc(var(--beat-ms) * 0.56) steps(3, end) infinite;
-  transform: scale(calc(var(--video-scale) * 1.018)) rotate(calc(var(--video-rotate) - 0.3deg));
 }
 
 .app.is-auto-freeze .video-flash {
   opacity: 0.38;
   animation: autoFreezeFlash calc(var(--beat-ms) * 0.42) steps(3, end) infinite;
   filter: contrast(1.08) saturate(1.12);
-}
-
-.app.effect-repeat-8n,
-.app.effect-repeat-16n,
-.app.effect-repeat-32n {
-  --video-scale: 1.02;
-}
-
-.app.is-break-pulse .video-shell {
-  animation: breakPulse 0.18s ease;
-}
-
-.app.is-repeat-hit .video-shell {
-  animation: repeatStutter 0.09s steps(2, end);
 }
 
 .app.is-repeat-hit .video-flash,
@@ -364,84 +328,9 @@ input {
   opacity: 0.54;
 }
 
-.app.is-bar-glitch .main-video,
-.app.is-bar-glitch .freeze-frame {
-  animation: barGlitch calc(var(--beat-ms) * 2) steps(6, end) infinite;
-}
-
 .app.is-bar-glitch .video-flash {
   opacity: 0.82;
   filter: contrast(1.18) saturate(1.35);
-}
-
-@keyframes breakPulse {
-  0% {
-    transform: scale(1);
-  }
-
-  50% {
-    transform: scale(1.012);
-  }
-
-  100% {
-    transform: scale(1);
-  }
-}
-
-@keyframes repeatStutter {
-  0% {
-    transform: translate3d(0, 0, 0);
-  }
-
-  25% {
-    transform: translate3d(-10px, 2px, 0);
-  }
-
-  50% {
-    transform: translate3d(8px, -4px, 0);
-  }
-
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-@keyframes barGlitch {
-  0% {
-    transform: translate3d(0, 0, 0) scale(var(--glitch-s1)) rotate(0deg);
-  }
-
-  14% {
-    transform:
-      translate3d(var(--glitch-x1), var(--glitch-y1), 0)
-      scale(var(--glitch-s2))
-      rotate(var(--glitch-r1));
-  }
-
-  31% {
-    transform:
-      translate3d(var(--glitch-x2), var(--glitch-y2), 0)
-      scale(var(--glitch-s3))
-      rotate(var(--glitch-r2));
-  }
-
-  48% {
-    transform:
-      translate3d(var(--glitch-x3), var(--glitch-y3), 0)
-      scale(var(--glitch-s4))
-      rotate(calc(var(--glitch-r1) * -0.7));
-  }
-
-  73% {
-    transform:
-      translate3d(var(--glitch-x4), var(--glitch-y4), 0)
-      scale(calc((var(--glitch-s2) + var(--glitch-s3)) / 2))
-      rotate(calc(var(--glitch-r2) * 0.8));
-  }
-
-  100% {
-    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
-  }
 }
 
 @keyframes freezeStrobe {
