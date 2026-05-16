@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wicked Game Artwork</title>
+  </head>
+  <body>
+    <div class="app" id="app">
+      <div class="video-shell" id="video-shell">
+        <div class="video-frame">
+          <video
+            id="main-video"
+            class="main-video"
+            muted
+            loop
+            playsinline
+            preload="auto"
+          ></video>
+          <img id="freeze-frame" class="freeze-frame" alt="" aria-hidden="true" />
+          <div class="video-flash" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <div id="controls-hint" class="controls-hint" aria-hidden="true">Tab for controls</div>
+
+      <section class="hud" aria-label="Artwork controls">
+        <div class="hud__row">
+          <button id="start-button" class="hud__button">Start</button>
+          <p id="status" class="hud__status">Ready. Add media files and press Start.</p>
+        </div>
+
+        <div class="hud__row hud__row--compact">
+          <label class="hud__tempo" for="tempo-slider">
+            <span>Tempo</span>
+            <input id="tempo-slider" type="range" />
+          </label>
+          <span id="tempo-value" class="hud__value"></span>
+
+          <button id="other-button" class="hud__button" type="button">Next Other</button>
+          <span id="other-label" class="hud__value"></span>
+        </div>
+
+        <div id="key-help" class="hud__help"></div>
+      </section>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "initialStatus": "Ready. Add media files and press Start.",
+  "finalStatus": "Running. Hold keys to perform.",
+  "finalButton": "Running",
+  "otherLabel": "OG",
+  "videoState": {
+    "currentSrc": "http://127.0.0.1:5173/media/video/main.mp4",
+    "playbackRate": 1,
+    "readyState": 4,
+    "currentTime": 6.479754,
+    "paused": false
+  },
+  "consoleMessages": [
+    "[debug] [vite] connecting...",
+    "[debug] [vite] connected.",
+    "[log] %c * Tone.js v15.1.22 *  background: #000; color: #fff",
+    "[warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio",
+    "[warning] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+  ],
+  "pageErrors": [],
+  "requestFailures": []
+}

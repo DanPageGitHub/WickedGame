@@ -1,0 +1,16 @@
+{
+  "initial": {
+    "rate": 1,
+    "paused": false
+  },
+  "afterTempo": {
+    "rate": 1.1956521739130435
+  },
+  "tempoText": "110 BPM",
+  "qDown": "app effect-filter",
+  "qUp": "app",
+  "oneDown": "app effect-repeat-8n",
+  "oneUp": "app",
+  "otherButtonDisabled": true,
+  "otherLabel": "OG"
+}

@@ -1,0 +1,8 @@
+{
+  "initialTempo": "112 BPM",
+  "raisedTempo": "250 BPM",
+  "sliderMax": "250",
+  "classAfterBar": "app",
+  "repeatDown": "app effect-repeat-8n is-bar-cycle is-repeat-hit",
+  "repeatUp": "app"
+}
