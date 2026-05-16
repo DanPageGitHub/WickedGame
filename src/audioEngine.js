@@ -31,7 +31,6 @@ export class AudioEngine {
 
     this.currentBpm = config.startBpm;
     this.currentBreakId = null;
-    this.currentOtherVariantIndex = 0;
     this.activeRepeatInterval = null;
     this.barScheduleId = null;
     this.repeatScheduleId = null;
@@ -116,8 +115,6 @@ export class AudioEngine {
     this.started = true;
 
     this.setTempo(this.currentBpm, true);
-    this.#setActiveOtherVariant(this.currentOtherVariantIndex, true);
-    this.events.emit("other-variant-change", this.getOtherVariantState());
   }
 
   setTempo(bpm, immediate = false) {
@@ -145,53 +142,15 @@ export class AudioEngine {
     this.#updateLongTrackMode(Tone.now(), immediate || this.hasTempoChanged);
   }
 
-  cycleOtherVariant() {
-    if (this.otherVariantBank.length < 2) {
-      return this.getOtherVariantState();
-    }
-
-    const nextIndex = (this.currentOtherVariantIndex + 1) % this.otherVariantBank.length;
-    this.#setActiveOtherVariant(nextIndex);
-    const state = this.getOtherVariantState();
-    this.events.emit("other-variant-change", state);
-    return state;
-  }
-
-  getOtherVariantState() {
-    const fallbackVariants =
-      this.config.media.otherVariants.length > 0
-        ? this.config.media.otherVariants
-        : [
-            {
-              id: "og",
-              label: "OG",
-              path: this.config.media.stems.other
-            }
-          ];
-    const sourceVariants = this.otherVariantBank.length
-      ? this.otherVariantBank.map(({ variant }) => variant)
-      : fallbackVariants;
-    const activeVariant = sourceVariants[this.currentOtherVariantIndex] ?? sourceVariants[0];
-
-    return {
-      activeIndex: this.currentOtherVariantIndex,
-      activeId: activeVariant?.id ?? null,
-      activeLabel: activeVariant?.label ?? "Unavailable",
-      count: sourceVariants.length
-    };
-  }
-
   #createGraph() {
     this.mixBus = new Tone.Gain(1);
     this.masterCrusher = new Tone.BitCrusher({ bits: 8, wet: 0 });
-    this.levelMeter = new Tone.Meter({ normalRange: true, smoothing: 0.82 });
     this.masterDryGain = new Tone.Gain(1).toDestination();
     this.masterDestroyWetGain = new Tone.Gain(0).toDestination();
 
     this.mixBus.connect(this.masterDryGain);
     this.mixBus.connect(this.masterCrusher);
     this.masterCrusher.connect(this.masterDestroyWetGain);
-    this.mixBus.connect(this.levelMeter);
 
     this.breaksFilter = new Tone.Filter({
       type: "lowpass",
@@ -285,10 +244,6 @@ export class AudioEngine {
 
     this.events.on("effect-hold", ({ effectId, active }) => {
       this.#handleEffectHold(effectId, active);
-    });
-
-    this.events.on("other-cycle-request", () => {
-      this.cycleOtherVariant();
     });
 
     this.events.on("clear-held-effects", () => {
@@ -471,24 +426,6 @@ export class AudioEngine {
     return breakIds[randomIndex];
   }
 
-  #setActiveOtherVariant(index, immediate = false) {
-    if (index < 0 || index >= this.otherVariantBank.length) {
-      return;
-    }
-
-    this.currentOtherVariantIndex = index;
-
-    this.otherVariantBank.forEach(({ gain }, variantIndex) => {
-      const target = variantIndex === index ? 1 : 0;
-
-      if (immediate) {
-        gain.gain.value = target;
-      } else {
-        gain.gain.rampTo(target, VARIANT_FADE_SECONDS);
-      }
-    });
-  }
-
   #clearAllEffects() {
     this.#queueBeatRepeat(null);
     this.#setFilterState(false);
@@ -592,11 +529,6 @@ export class AudioEngine {
   #getBreakTrackSourceOffsetAt(audioTime) {
     this.#advanceBreakTrackTimeline(audioTime);
     return this.breakTrackTimeline.sourceOffsetSeconds;
-  }
-
-  getVisualLevel() {
-    const rawLevel = this.levelMeter?.getValue?.() ?? 0;
-    return Number.isFinite(rawLevel) ? Math.max(0, Math.min(rawLevel, 1)) : 0;
   }
 
   async suspend() {

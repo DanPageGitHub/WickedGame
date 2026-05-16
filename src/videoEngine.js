@@ -133,10 +133,6 @@ export class VideoEngine {
       this.#flashClass("is-repeat-hit", 90);
     });
 
-    this.events.on("other-variant-change", () => {
-      this.#flashClass("is-other-shift", 220);
-    });
-
     this.events.on("effect-hold", ({ effectId, active }) => {
       this.#setEffectClass(effectId, active);
 
