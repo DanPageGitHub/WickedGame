@@ -12,13 +12,10 @@ const elements = {
   freezeFrame: document.querySelector("#freeze-frame"),
   factsOverlay: document.querySelector("#facts-overlay"),
   factsOverlayText: document.querySelector("#facts-overlay-text"),
-  startButton: document.querySelector("#start-button"),
   status: document.querySelector("#status"),
   tempoSlider: document.querySelector("#tempo-slider"),
   tempoValue: document.querySelector("#tempo-value"),
   keyHelp: document.querySelector("#key-help"),
-  otherButton: document.querySelector("#other-button"),
-  otherLabel: document.querySelector("#other-label"),
   controlsHint: document.querySelector("#controls-hint")
 };
 
@@ -36,6 +33,7 @@ const factsOverlay = new FactsOverlay(APP_CONFIG, events, {
 });
 let isRunning = false;
 let isPaused = false;
+let autoplayUnlockBound = false;
 
 const setStatus = (message, type = "info") => {
   elements.status.textContent = message;
@@ -49,7 +47,7 @@ const startPlayback = async () => {
   }
 
   try {
-    setStatus("Unlocking audio context...");
+    setStatus("Loading media...");
     await Promise.all([audioEngine.load(setStatus), videoEngine.load(setStatus)]);
 
     setStatus("Starting playback...");
@@ -57,12 +55,12 @@ const startPlayback = async () => {
 
     isRunning = true;
     isPaused = false;
+    autoplayUnlockBound = false;
     setStatus("Running. Hold keys to perform.");
-    elements.startButton.textContent = "Running";
     return true;
   } catch (error) {
     console.error(error);
-    setStatus(error.message, "error");
+    setStatus("Tap or press Space for audio.", "error");
     return false;
   }
 };
@@ -73,16 +71,9 @@ const controls = createControls({
   elements,
   onTempoChange: (bpm) => {
     audioEngine.setTempo(bpm);
-  },
-  onStart: startPlayback
+  }
 });
 factsOverlay.load();
-
-controls.setOtherVariantState(audioEngine.getOtherVariantState());
-
-events.on("other-variant-change", (state) => {
-  controls.setOtherVariantState(state);
-});
 
 events.on("tempo-change", ({ bpm }) => {
   elements.tempoSlider.value = String(Math.round(bpm));
@@ -107,4 +98,36 @@ events.on("transport-toggle", async () => {
   setStatus("Paused.");
 });
 
-setStatus("Ready. Add media files and press Start.");
+const bindAutoplayUnlock = () => {
+  if (autoplayUnlockBound || isRunning) {
+    return;
+  }
+
+  autoplayUnlockBound = true;
+  const unlock = async () => {
+    window.removeEventListener("pointerdown", unlock);
+    window.removeEventListener("keydown", unlock);
+    autoplayUnlockBound = false;
+    await startPlayback();
+  };
+
+  window.addEventListener("pointerdown", unlock, { once: true });
+  window.addEventListener("keydown", unlock, { once: true });
+};
+
+const boot = async () => {
+  setStatus("Loading media...");
+  await Promise.all([audioEngine.load(setStatus), videoEngine.load(setStatus)]);
+
+  try {
+    await videoEngine.start();
+    setStatus("Video running. Tap or press Space for audio.");
+  } catch (error) {
+    console.warn(error);
+    setStatus("Tap or press Space for playback.");
+  }
+
+  bindAutoplayUnlock();
+};
+
+boot();

@@ -91,12 +91,14 @@ export class AudioEngine {
 
     const startAt = Tone.now() + 0.05;
 
-    Object.values(this.stemPlayers).forEach((player) => {
-      player.start(startAt);
+    Object.values(this.stemPlayers).forEach(({ cleanPlayer, stretchPlayer }) => {
+      cleanPlayer.start(startAt);
+      stretchPlayer.start(startAt);
     });
 
-    this.otherVariantBank.forEach(({ player }) => {
-      player.start(startAt);
+    this.otherVariantBank.forEach(({ cleanPlayer, stretchPlayer }) => {
+      cleanPlayer.start(startAt);
+      stretchPlayer.start(startAt);
     });
 
     if (this.breakTrackPlayer) {
@@ -140,6 +142,7 @@ export class AudioEngine {
     this.#updateLongPlayerPlaybackRates();
     this.#updateBreakPlaybackRates();
     this.#updateBreakTrackMode(Tone.now(), immediate || this.hasTempoChanged);
+    this.#updateLongTrackMode(Tone.now(), immediate || this.hasTempoChanged);
   }
 
   cycleOtherVariant() {
@@ -227,9 +230,8 @@ export class AudioEngine {
   #createStemPlayers() {
     this.stemPlayers = {};
 
-    this.stemPlayers.vocals = this.#createLongPlayer(this.config.media.stems.vocals).connect(this.vocalDelay);
-
-    this.stemPlayers.bass = this.#createLongPlayer(this.config.media.stems.bass).connect(this.bassChannel);
+    this.stemPlayers.vocals = this.#createHybridLoop(this.config.media.stems.vocals, this.vocalDelay);
+    this.stemPlayers.bass = this.#createHybridLoop(this.config.media.stems.bass, this.bassChannel);
 
     this.#updateLongPlayerPlaybackRates();
   }
@@ -247,12 +249,8 @@ export class AudioEngine {
           ];
 
     this.otherVariantBank = variants.map((variant, index) => {
-      const player = this.#createLongPlayer(variant.path);
-      const gain = new Tone.Gain(index === 0 ? 1 : 0).connect(this.otherChannel);
-
-      player.connect(gain);
-
-      return { variant, player, gain };
+      const loop = this.#createHybridLoop(variant.path, this.otherChannel, index === 0 ? 1 : 0);
+      return { variant, ...loop };
     });
 
     this.#updateLongPlayerPlaybackRates();
@@ -382,7 +380,8 @@ export class AudioEngine {
       this.breakRepeatPlayer.loop = true;
       this.breakRepeatPlayer.loopStart = safeOffset;
       this.breakRepeatPlayer.loopEnd = Math.min(safeOffset + sourceDuration, bufferDuration);
-      this.breakRepeatPlayer.restart(activationTime, safeOffset);
+      this.breakRepeatPlayer.stop(activationTime);
+      this.breakRepeatPlayer.start(activationTime, safeOffset);
       this.#scheduleGain(this.breakTrackCleanGain.gain, 0, activationTime, REPEAT_ENGAGE_FADE);
       this.#scheduleGain(this.breakTrackGain.gain, 0, activationTime, REPEAT_ENGAGE_FADE);
       this.#scheduleGain(this.breakRepeatGain.gain, 1, activationTime, REPEAT_ENGAGE_FADE);
@@ -532,7 +531,7 @@ export class AudioEngine {
 
   #updateBreakPlaybackRates() {
     const playbackRate = this.#getBreakPlaybackRate();
-    const { longGrainSize, longOverlap, repeatGrainSize, repeatOverlap } = this.#getStretchSettings();
+    const { longGrainSize, longOverlap } = this.#getStretchSettings();
 
     if (this.breakTrackPlayer) {
       this.breakTrackPlayer.playbackRate = playbackRate;
@@ -541,7 +540,6 @@ export class AudioEngine {
 
     if (this.breakRepeatPlayer) {
       this.breakRepeatPlayer.playbackRate = playbackRate;
-      this.#applyStretchSettings(this.breakRepeatPlayer, repeatGrainSize, repeatOverlap);
     }
 
     if (!this.breakPlayers) {
@@ -557,14 +555,14 @@ export class AudioEngine {
     const playbackRate = this.currentBpm / this.config.baseBpm;
     const { longGrainSize, longOverlap } = this.#getStretchSettings();
 
-    Object.values(this.stemPlayers).forEach((player) => {
-      player.playbackRate = playbackRate;
-      this.#applyStretchSettings(player, longGrainSize, longOverlap);
+    Object.values(this.stemPlayers).forEach(({ stretchPlayer }) => {
+      stretchPlayer.playbackRate = playbackRate;
+      this.#applyStretchSettings(stretchPlayer, longGrainSize, longOverlap);
     });
 
-    this.otherVariantBank.forEach(({ player }) => {
-      player.playbackRate = playbackRate;
-      this.#applyStretchSettings(player, longGrainSize, longOverlap);
+    this.otherVariantBank.forEach(({ stretchPlayer }) => {
+      stretchPlayer.playbackRate = playbackRate;
+      this.#applyStretchSettings(stretchPlayer, longGrainSize, longOverlap);
     });
   }
 
@@ -619,12 +617,26 @@ export class AudioEngine {
   }
 
   #createRepeatPlayer(url) {
-    return new Tone.GrainPlayer({
+    return new Tone.Player({
       url,
-      loop: true,
-      grainSize: REPEAT_GRAIN_SIZE,
-      overlap: REPEAT_GRAIN_OVERLAP
+      loop: true
     });
+  }
+
+  #createHybridLoop(url, destination, initialOutput = 1) {
+    const outputGain = new Tone.Gain(initialOutput).connect(destination);
+    const cleanGain = new Tone.Gain(1).connect(outputGain);
+    const stretchGain = new Tone.Gain(0).connect(outputGain);
+    const cleanPlayer = this.#createCleanLoopPlayer(url).connect(cleanGain);
+    const stretchPlayer = this.#createLongPlayer(url).connect(stretchGain);
+
+    return {
+      cleanPlayer,
+      stretchPlayer,
+      cleanGain,
+      stretchGain,
+      gain: outputGain
+    };
   }
 
   #createCleanLoopPlayer(url) {
@@ -692,7 +704,35 @@ export class AudioEngine {
     this.#scheduleBreakTrackIdleState(time, 0.04);
   }
 
+  #updateLongTrackMode(time = Tone.now(), immediate = false) {
+    const useClean = this.#shouldUseCleanLongPlayback();
+
+    Object.values(this.stemPlayers).forEach(({ cleanGain, stretchGain }) => {
+      if (immediate) {
+        cleanGain.gain.value = useClean ? 1 : 0;
+        stretchGain.gain.value = useClean ? 0 : 1;
+      } else {
+        this.#scheduleGain(cleanGain.gain, useClean ? 1 : 0, time, 0.04);
+        this.#scheduleGain(stretchGain.gain, useClean ? 0 : 1, time, 0.04);
+      }
+    });
+
+    this.otherVariantBank.forEach(({ cleanGain, stretchGain }) => {
+      if (immediate) {
+        cleanGain.gain.value = useClean ? 1 : 0;
+        stretchGain.gain.value = useClean ? 0 : 1;
+      } else {
+        this.#scheduleGain(cleanGain.gain, useClean ? 1 : 0, time, 0.04);
+        this.#scheduleGain(stretchGain.gain, useClean ? 0 : 1, time, 0.04);
+      }
+    });
+  }
+
   #shouldUseCleanBreakTrack() {
+    return !this.hasTempoChanged && Math.abs(this.currentBpm - this.config.baseBpm) <= BPM_EPSILON;
+  }
+
+  #shouldUseCleanLongPlayback() {
     return !this.hasTempoChanged && Math.abs(this.currentBpm - this.config.baseBpm) <= BPM_EPSILON;
   }
 

@@ -6,14 +6,13 @@ function normalizeKey(key) {
   return key.toLowerCase();
 }
 
-export function createControls({ config, events, elements, onStart, onTempoChange }) {
+export function createControls({ config, events, elements, onTempoChange }) {
   const heldKeyMap = config.controls.heldKeys;
   const activeKeys = new Set();
   const isRepeatKey = (key) => heldKeyMap[key]?.effectId.startsWith("repeat-");
   let controlsVisible = false;
 
   const keyHelpItems = Object.entries(heldKeyMap).map(([, value]) => value.label);
-  keyHelpItems.push("Btn: next gtr");
   keyHelpItems.push("F: facts");
   keyHelpItems.push("Space: play / pause");
   keyHelpItems.push("Tab: controls");
@@ -126,21 +125,6 @@ export function createControls({ config, events, elements, onStart, onTempoChang
     onTempoChange(bpm);
   };
 
-  const handleStart = async () => {
-    elements.startButton.disabled = true;
-
-    try {
-      const keepDisabled = await onStart();
-
-      if (!keepDisabled) {
-        elements.startButton.disabled = false;
-      }
-    } catch (error) {
-      elements.startButton.disabled = false;
-      throw error;
-    }
-  };
-
   window.addEventListener("keydown", handleKeyDown);
   window.addEventListener("keyup", handleKeyUp);
   window.addEventListener("blur", clearHeldKeys);
@@ -149,22 +133,9 @@ export function createControls({ config, events, elements, onStart, onTempoChang
       clearHeldKeys();
     }
   });
-
-  elements.startButton.addEventListener("click", handleStart);
   elements.tempoSlider.addEventListener("input", handleTempoInput);
-  elements.otherButton.addEventListener("click", () => {
-    events.emit("other-cycle-request");
-  });
 
   return {
-    clearHeldKeys,
-    setOtherVariantState({ activeLabel, count }) {
-      elements.otherLabel.textContent = activeLabel;
-      elements.otherButton.disabled = count < 2;
-      elements.otherButton.title =
-        count < 2
-          ? "Add more synced guitar variants in src/config.js to enable switching."
-          : "Cycle to the next synced guitar variant.";
-    }
+    clearHeldKeys
   };
 }
