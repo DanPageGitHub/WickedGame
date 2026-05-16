@@ -35,6 +35,32 @@ const setStatus = (message, type = "info") => {
   elements.status.dataset.type = type;
 };
 
+const startPlayback = async () => {
+  if (isRunning) {
+    setStatus("Running. Hold keys to perform.");
+    return true;
+  }
+
+  try {
+    setStatus("Unlocking audio context...");
+    await Promise.all([audioEngine.load(setStatus), videoEngine.load(setStatus)]);
+
+    setStatus("Starting playback...");
+    await Promise.all([audioEngine.start(), videoEngine.start()]);
+
+    isRunning = true;
+    isPaused = false;
+    startAmplitudeLoop();
+    setStatus("Running. Hold keys to perform.");
+    elements.startButton.textContent = "Running";
+    return true;
+  } catch (error) {
+    console.error(error);
+    setStatus(error.message, "error");
+    return false;
+  }
+};
+
 const startAmplitudeLoop = () => {
   const tick = () => {
     if (isRunning && !isPaused) {
@@ -62,31 +88,7 @@ const controls = createControls({
   onTempoChange: (bpm) => {
     audioEngine.setTempo(bpm);
   },
-  onStart: async () => {
-    if (isRunning) {
-      setStatus("Running. Hold keys to perform.");
-      return true;
-    }
-
-    try {
-      setStatus("Unlocking audio context...");
-      await Promise.all([audioEngine.load(setStatus), videoEngine.load(setStatus)]);
-
-      setStatus("Starting playback...");
-      await Promise.all([audioEngine.start(), videoEngine.start()]);
-
-      isRunning = true;
-      isPaused = false;
-      startAmplitudeLoop();
-      setStatus("Running. Hold keys to perform.");
-      elements.startButton.textContent = "Running";
-      return true;
-    } catch (error) {
-      console.error(error);
-      setStatus(error.message, "error");
-      return false;
-    }
-  }
+  onStart: startPlayback
 });
 
 controls.setOtherVariantState(audioEngine.getOtherVariantState());
@@ -102,6 +104,7 @@ events.on("tempo-change", ({ bpm }) => {
 
 events.on("transport-toggle", async () => {
   if (!isRunning) {
+    await startPlayback();
     return;
   }
 

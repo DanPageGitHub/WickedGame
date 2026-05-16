@@ -28,6 +28,7 @@ export class VideoEngine {
     this.glitchShuffleIntervalId = null;
     this.freezePlaybackIndex = 0;
     this.freezeMode = null;
+    this.motionPhase = 0;
 
     this.canvas = document.createElement("canvas");
     this.context = this.canvas.getContext("2d", { willReadFrequently: false });
@@ -107,14 +108,27 @@ export class VideoEngine {
 
     this.events.on("amplitude-change", ({ level }) => {
       const amp = Math.max(0, Math.min(level, 1));
-      const motionScale = 1 + amp * 0.12;
-      const motionRotate = (amp - 0.18) * 2.8;
-      const motionBrightness = 1 + amp * 0.08;
-      const motionContrast = 1 + amp * 0.16;
+      const boosted = Math.pow(amp, 0.42);
+
+      this.motionPhase += 0.12 + boosted * 0.22;
+
+      const motionScale = 1 + boosted * 0.2;
+      const motionRotate = Math.sin(this.motionPhase * 0.72) * boosted * 1.8;
+      const motionBrightness = 1 + boosted * 0.16;
+      const motionContrast = 1 + boosted * 0.34;
+      const motionX = Math.sin(this.motionPhase * 1.18) * boosted * 34;
+      const motionY = Math.cos(this.motionPhase * 1.63) * boosted * 20;
+      const motionBlur = boosted * 0.65;
+      const motionFlash = 0.08 + boosted * 0.22;
+
       document.documentElement.style.setProperty("--amp-scale", `${motionScale}`);
       document.documentElement.style.setProperty("--amp-rotate", `${motionRotate}deg`);
       document.documentElement.style.setProperty("--amp-brightness", `${motionBrightness}`);
       document.documentElement.style.setProperty("--amp-contrast", `${motionContrast}`);
+      document.documentElement.style.setProperty("--amp-x", `${motionX}px`);
+      document.documentElement.style.setProperty("--amp-y", `${motionY}px`);
+      document.documentElement.style.setProperty("--amp-blur", `${motionBlur}px`);
+      document.documentElement.style.setProperty("--amp-flash", `${motionFlash}`);
     });
 
     this.events.on("bar-cycle", () => {

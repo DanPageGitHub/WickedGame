@@ -3,6 +3,13 @@ import * as Tone from "tone";
 const FILTER_OPEN_FREQUENCY = 18000;
 const FILTER_CLOSED_FREQUENCY = 900;
 const VARIANT_FADE_SECONDS = 0.04;
+const LONG_GRAIN_SIZE = 0.09;
+const LONG_GRAIN_OVERLAP = 0.045;
+const REPEAT_GRAIN_SIZE = 0.035;
+const REPEAT_GRAIN_OVERLAP = 0.02;
+const REPEAT_QUANTIZE = "4n";
+const REPEAT_RELEASE_FADE = 0.03;
+const REPEAT_VOICE_COUNT = 6;
 
 export class AudioEngine {
   constructor(config, events) {
@@ -19,6 +26,8 @@ export class AudioEngine {
     this.activeRepeatInterval = null;
     this.barScheduleId = null;
     this.repeatScheduleId = null;
+    this.repeatQuantizeTimeoutId = null;
+    this.repeatVoiceIndex = 0;
     this.repeatSourceOffsetSeconds = config.breakStartOffsetSeconds;
     this.breakTrackStartTime = null;
     this.breakTrackTimeline = {
@@ -31,7 +40,7 @@ export class AudioEngine {
     this.otherVariantBank = [];
     this.breakPlayers = null;
     this.breakTrackPlayer = null;
-    this.breakRepeatTap = null;
+    this.breakRepeatVoices = [];
     this.breakTrackGain = null;
     this.breakRepeatGain = null;
   }
@@ -193,19 +202,9 @@ export class AudioEngine {
   #createStemPlayers() {
     this.stemPlayers = {};
 
-    this.stemPlayers.vocals = new Tone.Player({
-      url: this.config.media.stems.vocals,
-      loop: true,
-      fadeIn: 0.01,
-      fadeOut: 0.01
-    }).connect(this.vocalDelay);
+    this.stemPlayers.vocals = this.#createLongPlayer(this.config.media.stems.vocals).connect(this.vocalDelay);
 
-    this.stemPlayers.bass = new Tone.Player({
-      url: this.config.media.stems.bass,
-      loop: true,
-      fadeIn: 0.01,
-      fadeOut: 0.01
-    }).connect(this.bassChannel);
+    this.stemPlayers.bass = this.#createLongPlayer(this.config.media.stems.bass).connect(this.bassChannel);
 
     this.#updateLongPlayerPlaybackRates();
   }
@@ -223,35 +222,23 @@ export class AudioEngine {
           ];
 
     this.otherVariantBank = variants.map((variant, index) => {
-      const player = new Tone.Player({
-        url: variant.path,
-        loop: true,
-        fadeIn: 0.01,
-        fadeOut: 0.01
-      });
+      const player = this.#createLongPlayer(variant.path);
       const gain = new Tone.Gain(index === 0 ? 1 : 0).connect(this.otherChannel);
 
       player.connect(gain);
 
       return { variant, player, gain };
     });
+
+    this.#updateLongPlayerPlaybackRates();
   }
 
   #createBreakPlayers() {
     if (this.config.media.breakTrackPath) {
-      this.breakTrackPlayer = new Tone.Player({
-        url: this.config.media.breakTrackPath,
-        loop: true,
-        fadeIn: 0.01,
-        fadeOut: 0.01
-      }).connect(this.breakTrackGain);
-
-      this.breakRepeatTap = new Tone.Player({
-        url: this.config.media.breakTrackPath,
-        loop: false,
-        fadeIn: 0.005,
-        fadeOut: 0.01
-      }).connect(this.breakRepeatGain);
+      this.breakTrackPlayer = this.#createLongPlayer(this.config.media.breakTrackPath).connect(this.breakTrackGain);
+      this.breakRepeatVoices = Array.from({ length: REPEAT_VOICE_COUNT }, () =>
+        this.#createRepeatPlayer(this.config.media.breakTrackPath).connect(this.breakRepeatGain)
+      );
 
       this.#updateBreakPlaybackRates();
       return;
@@ -291,13 +278,13 @@ export class AudioEngine {
   #handleEffectHold(effectId, active) {
     switch (effectId) {
       case "repeat-8n":
-        this.#setBeatRepeat(active ? "8n" : null);
+        this.#queueBeatRepeat(active ? "8n" : null);
         break;
       case "repeat-16n":
-        this.#setBeatRepeat(active ? "16n" : null);
+        this.#queueBeatRepeat(active ? "16n" : null);
         break;
       case "repeat-32n":
-        this.#setBeatRepeat(active ? "32n" : null);
+        this.#queueBeatRepeat(active ? "32n" : null);
         break;
       case "filter":
         this.#setFilterState(active);
@@ -343,24 +330,26 @@ export class AudioEngine {
 
     if (!interval) {
       if (this.breakTrackGain) {
-        this.breakTrackGain.gain.rampTo(1, 0.01);
+        this.#scheduleGain(this.breakTrackGain.gain, 1, Tone.now(), REPEAT_RELEASE_FADE);
       }
       return;
     }
 
     if (this.breakTrackPlayer) {
       this.repeatSourceOffsetSeconds = this.#getBreakTrackSourceOffsetAt(Tone.now());
-      this.breakTrackGain.gain.rampTo(0, 0.01);
+      this.#scheduleGain(this.breakTrackGain.gain, 0, Tone.now(), 0.012);
     }
 
     this.activeRepeatInterval = interval;
     this.repeatScheduleId = Tone.Transport.scheduleRepeat((time) => {
-      if (this.breakTrackPlayer && this.breakRepeatTap) {
+      if (this.breakTrackPlayer && this.breakRepeatVoices.length > 0) {
         const intervalSeconds = Tone.Time(interval).toSeconds();
         const playbackRate = this.#getBreakPlaybackRate();
         const sourceDuration = Math.max(intervalSeconds * playbackRate * 0.95, 0.04);
+        const voice = this.breakRepeatVoices[this.repeatVoiceIndex];
 
-        this.breakRepeatTap.start(time, this.repeatSourceOffsetSeconds, sourceDuration);
+        this.repeatVoiceIndex = (this.repeatVoiceIndex + 1) % this.breakRepeatVoices.length;
+        voice.restart(time, this.repeatSourceOffsetSeconds, sourceDuration);
         this.events.emit("beat-repeat-hit", {
           breakId: "break-track",
           interval
@@ -383,6 +372,25 @@ export class AudioEngine {
         interval
       });
     }, interval);
+  }
+
+  #queueBeatRepeat(interval) {
+    if (!this.started) {
+      return;
+    }
+
+    if (this.repeatQuantizeTimeoutId !== null) {
+      window.clearTimeout(this.repeatQuantizeTimeoutId);
+      this.repeatQuantizeTimeoutId = null;
+    }
+
+    const quantizedTime = Tone.Transport.nextSubdivision(REPEAT_QUANTIZE) || Tone.now() + 0.01;
+    const delayMs = Math.max((quantizedTime - Tone.now()) * 1000, 0);
+
+    this.repeatQuantizeTimeoutId = window.setTimeout(() => {
+      this.repeatQuantizeTimeoutId = null;
+      this.#setBeatRepeat(interval);
+    }, delayMs);
   }
 
   #scheduleBarChanges() {
@@ -433,7 +441,7 @@ export class AudioEngine {
   }
 
   #clearAllEffects() {
-    this.#setBeatRepeat(null);
+    this.#queueBeatRepeat(null);
     this.#setFilterState(false);
     this.#setDestroyState(false);
     this.#setVocalThrowState(false);
@@ -448,7 +456,9 @@ export class AudioEngine {
     this.currentBreakId = null;
     this.barScheduleId = null;
     this.repeatScheduleId = null;
+    this.repeatQuantizeTimeoutId = null;
     this.activeRepeatInterval = null;
+    this.repeatVoiceIndex = 0;
     this.repeatSourceOffsetSeconds = this.config.breakStartOffsetSeconds;
     this.breakTrackStartTime = null;
     this.breakTrackTimeline = {
@@ -469,9 +479,9 @@ export class AudioEngine {
       this.breakTrackPlayer.playbackRate = playbackRate;
     }
 
-    if (this.breakRepeatTap) {
-      this.breakRepeatTap.playbackRate = playbackRate;
-    }
+    this.breakRepeatVoices.forEach((voice) => {
+      voice.playbackRate = playbackRate;
+    });
 
     if (!this.breakPlayers) {
       return;
@@ -533,5 +543,30 @@ export class AudioEngine {
 
   async resume() {
     await Tone.getContext().rawContext.resume();
+  }
+
+  #createLongPlayer(url) {
+    return new Tone.GrainPlayer({
+      url,
+      loop: true,
+      grainSize: LONG_GRAIN_SIZE,
+      overlap: LONG_GRAIN_OVERLAP
+    });
+  }
+
+  #createRepeatPlayer(url) {
+    return new Tone.GrainPlayer({
+      url,
+      loop: false,
+      grainSize: REPEAT_GRAIN_SIZE,
+      overlap: REPEAT_GRAIN_OVERLAP
+    });
+  }
+
+  #scheduleGain(param, target, time, fadeDuration) {
+    const startValue = param.value;
+    param.cancelScheduledValues(time);
+    param.setValueAtTime(startValue, time);
+    param.linearRampToValueAtTime(target, time + fadeDuration);
   }
 }
