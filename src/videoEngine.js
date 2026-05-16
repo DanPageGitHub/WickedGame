@@ -64,6 +64,7 @@ export class VideoEngine {
       this.video.load();
     });
 
+    document.documentElement.style.setProperty("--video-aspect", `${this.video.videoWidth / this.video.videoHeight}`);
     this.video.currentTime = 0;
     this.video.playbackRate = this.config.startBpm / this.config.baseBpm;
     this.#bindEventBus();

@@ -28,6 +28,7 @@
   --bar-color-a: #f26a4b;
   --bar-color-b: #f4b860;
   --bar-color-c: #f2df74;
+  --video-aspect: 1.7777778;
   --glitch-x1: -8px;
   --glitch-y1: 3px;
   --glitch-x2: 6px;
@@ -100,8 +101,8 @@ input {
 
 .video-frame {
   position: relative;
-  width: min(100vw, 1400px);
-  height: min(100vh, 1000px);
+  width: min(100vw, calc(100vh * var(--video-aspect)));
+  height: 100vh;
   overflow: hidden;
   background: #000;
 }
@@ -534,9 +535,8 @@ input {
 }
 
 @media (max-width: 720px) {
-  .main-video,
-  .freeze-frame {
-    width: 100vw;
+  .video-frame {
+    width: min(100vw, calc(100vh * var(--video-aspect)));
     height: 100vh;
   }
 

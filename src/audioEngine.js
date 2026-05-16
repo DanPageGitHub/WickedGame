@@ -10,6 +10,14 @@ const REPEAT_GRAIN_OVERLAP = 0.02;
 const REPEAT_QUANTIZE = "4n";
 const REPEAT_RELEASE_FADE = 0.03;
 const REPEAT_VOICE_COUNT = 6;
+const LONG_GRAIN_MIN = 0.04;
+const LONG_GRAIN_MAX = 0.11;
+const LONG_OVERLAP_MIN = 0.018;
+const LONG_OVERLAP_MAX = 0.065;
+const REPEAT_GRAIN_MIN = 0.02;
+const REPEAT_GRAIN_MAX = 0.05;
+const REPEAT_OVERLAP_MIN = 0.012;
+const REPEAT_OVERLAP_MAX = 0.03;
 
 export class AudioEngine {
   constructor(config, events) {
@@ -317,7 +325,7 @@ export class AudioEngine {
     this.vocalDelay.wet.rampTo(active ? 0.55 : 0, 0.05);
   }
 
-  #setBeatRepeat(interval) {
+  #setBeatRepeat(interval, activationTime = Tone.now()) {
     if (!this.started) {
       return;
     }
@@ -330,18 +338,17 @@ export class AudioEngine {
 
     if (!interval) {
       if (this.breakTrackGain) {
-        this.#scheduleGain(this.breakTrackGain.gain, 1, Tone.now(), REPEAT_RELEASE_FADE);
+        this.#scheduleGain(this.breakTrackGain.gain, 1, activationTime, REPEAT_RELEASE_FADE);
       }
       return;
     }
 
     if (this.breakTrackPlayer) {
-      this.repeatSourceOffsetSeconds = this.#getBreakTrackSourceOffsetAt(Tone.now());
-      this.#scheduleGain(this.breakTrackGain.gain, 0, Tone.now(), 0.012);
+      this.repeatSourceOffsetSeconds = this.#getBreakTrackSourceOffsetAt(activationTime);
+      this.#scheduleGain(this.breakTrackGain.gain, 0, activationTime, 0.012);
     }
 
-    this.activeRepeatInterval = interval;
-    this.repeatScheduleId = Tone.Transport.scheduleRepeat((time) => {
+    const triggerRepeatHit = (time) => {
       if (this.breakTrackPlayer && this.breakRepeatVoices.length > 0) {
         const intervalSeconds = Tone.Time(interval).toSeconds();
         const playbackRate = this.#getBreakPlaybackRate();
@@ -371,7 +378,15 @@ export class AudioEngine {
         breakId: this.currentBreakId,
         interval
       });
-    }, interval);
+    };
+
+    this.activeRepeatInterval = interval;
+    triggerRepeatHit(activationTime);
+    this.repeatScheduleId = Tone.Transport.scheduleRepeat(
+      triggerRepeatHit,
+      interval,
+      activationTime + Tone.Time(interval).toSeconds()
+    );
   }
 
   #queueBeatRepeat(interval) {
@@ -389,7 +404,7 @@ export class AudioEngine {
 
     this.repeatQuantizeTimeoutId = window.setTimeout(() => {
       this.repeatQuantizeTimeoutId = null;
-      this.#setBeatRepeat(interval);
+      this.#setBeatRepeat(interval, quantizedTime);
     }, delayMs);
   }
 
@@ -474,13 +489,16 @@ export class AudioEngine {
 
   #updateBreakPlaybackRates() {
     const playbackRate = this.#getBreakPlaybackRate();
+    const { longGrainSize, longOverlap, repeatGrainSize, repeatOverlap } = this.#getStretchSettings();
 
     if (this.breakTrackPlayer) {
       this.breakTrackPlayer.playbackRate = playbackRate;
+      this.#applyStretchSettings(this.breakTrackPlayer, longGrainSize, longOverlap);
     }
 
     this.breakRepeatVoices.forEach((voice) => {
       voice.playbackRate = playbackRate;
+      this.#applyStretchSettings(voice, repeatGrainSize, repeatOverlap);
     });
 
     if (!this.breakPlayers) {
@@ -494,13 +512,16 @@ export class AudioEngine {
 
   #updateLongPlayerPlaybackRates() {
     const playbackRate = this.currentBpm / this.config.baseBpm;
+    const { longGrainSize, longOverlap } = this.#getStretchSettings();
 
     Object.values(this.stemPlayers).forEach((player) => {
       player.playbackRate = playbackRate;
+      this.#applyStretchSettings(player, longGrainSize, longOverlap);
     });
 
     this.otherVariantBank.forEach(({ player }) => {
       player.playbackRate = playbackRate;
+      this.#applyStretchSettings(player, longGrainSize, longOverlap);
     });
   }
 
@@ -568,5 +589,24 @@ export class AudioEngine {
     param.cancelScheduledValues(time);
     param.setValueAtTime(startValue, time);
     param.linearRampToValueAtTime(target, time + fadeDuration);
+  }
+
+  #getStretchSettings() {
+    const ratio = Math.max(this.currentBpm / this.config.baseBpm, 0.25);
+    const longGrainSize = this.#clamp(LONG_GRAIN_SIZE / ratio, LONG_GRAIN_MIN, LONG_GRAIN_MAX);
+    const longOverlap = this.#clamp(longGrainSize * 0.58, LONG_OVERLAP_MIN, LONG_OVERLAP_MAX);
+    const repeatGrainSize = this.#clamp(REPEAT_GRAIN_SIZE / Math.max(Math.sqrt(ratio), 0.5), REPEAT_GRAIN_MIN, REPEAT_GRAIN_MAX);
+    const repeatOverlap = this.#clamp(repeatGrainSize * 0.58, REPEAT_OVERLAP_MIN, REPEAT_OVERLAP_MAX);
+
+    return { longGrainSize, longOverlap, repeatGrainSize, repeatOverlap };
+  }
+
+  #applyStretchSettings(player, grainSize, overlap) {
+    player.grainSize = grainSize;
+    player.overlap = overlap;
+  }
+
+  #clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
   }
 }
